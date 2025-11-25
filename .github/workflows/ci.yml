@@ -1,0 +1,150 @@
+name: CI - Build & Push Docker Image
+
+on:
+  push:
+    branches:
+      - main          # prod branch
+      - develop       # dev branch
+      - 'release/**'  # uat branches
+    tags:
+      - 'v*.*.*'      # releases: v1.2.3
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+env:
+  DOCKER_IMAGE: ${{ vars.DOCKER_IMAGE }}
+
+jobs:
+  build-and-push:
+    name: Build and Push to DockerHub
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # needed to inspect tags
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to DockerHub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # -------------------------------
+      # Determine VERSION / ENV / TAGS
+      # -------------------------------
+      - name: Compute version and tags (SemVer + SHA)
+        id: version
+        run: |
+          set -e
+
+          BRANCH_NAME="${GITHUB_REF_NAME}"
+          SHORT_SHA="$(git rev-parse --short HEAD)"
+          BUILD_NUMBER="${GITHUB_RUN_NUMBER}"
+
+          # Default environment
+          ENVIRONMENT="dev"
+          IS_RELEASE="false"
+
+          # If we are building from a tag like refs/tags/v1.2.3
+          if [[ "${GITHUB_REF}" == refs/tags/v*.*.* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"   # keep the leading v
+            ENVIRONMENT="prod"
+            IS_RELEASE="true"
+          # Main branch → production candidate
+          elif [[ "${BRANCH_NAME}" == "main" ]]; then
+            VERSION="v0.0.0-main.${BUILD_NUMBER}"
+            ENVIRONMENT="prod"
+          # Release branches → UAT
+          elif [[ "${BRANCH_NAME}" == release/* ]]; then
+            VERSION="v0.0.0-rc.${BUILD_NUMBER}"
+            ENVIRONMENT="uat"
+          # Develop → dev
+          elif [[ "${BRANCH_NAME}" == "develop" ]]; then
+            VERSION="v0.0.0-dev.${BUILD_NUMBER}"
+            ENVIRONMENT="dev"
+          else
+            # Other branches (feature, etc.)
+            SAFE_BRANCH="$(echo "${BRANCH_NAME}" | sed 's/[^a-zA-Z0-9.-]/-/g')"
+            VERSION="v0.0.0-${SAFE_BRANCH}.${BUILD_NUMBER}"
+            ENVIRONMENT="dev"
+          fi
+
+          # Immutable tag = SemVer/label + SHA
+          IMAGE_TAG="${VERSION}-${SHORT_SHA}"
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "environment=${ENVIRONMENT}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "build_number=${BUILD_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "is_release=${IS_RELEASE}" >> "$GITHUB_OUTPUT"
+
+          echo "Computed:"
+          echo "  VERSION     = ${VERSION}"
+          echo "  IMAGE_TAG   = ${IMAGE_TAG}"
+          echo "  ENVIRONMENT = ${ENVIRONMENT}"
+          echo "  IS_RELEASE  = ${IS_RELEASE}"
+
+      - name: Build tag list
+        id: tags
+        run: |
+          set -e
+          IMAGE="${{ env.DOCKER_IMAGE }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          IMAGE_TAG="${{ steps.version.outputs.image_tag }}"
+          ENVIRONMENT="${{ steps.version.outputs.environment }}"
+          IS_RELEASE="${{ steps.version.outputs.is_release }}"
+          BUILD_NUMBER="${{ steps.version.outputs.build_number }}"
+
+          TAGS="${IMAGE}:${IMAGE_TAG}"
+          TAGS="${TAGS},${IMAGE}:${VERSION}"
+          TAGS="${TAGS},${IMAGE}:${ENVIRONMENT}-latest"
+          TAGS="${TAGS},${IMAGE}:build-${BUILD_NUMBER}"
+
+          # Only for real releases from tags vX.Y.Z: also add vX.Y and vX
+          if [[ "${IS_RELEASE}" == "true" ]]; then
+            RAW_VER="${VERSION#v}"           # drop leading v, e.g. 1.2.3
+            MAJOR="$(echo "${RAW_VER}" | cut -d. -f1)"
+            MINOR="$(echo "${RAW_VER}" | cut -d. -f2)"
+            TAGS="${TAGS},${IMAGE}:v${MAJOR}.${MINOR}"
+            TAGS="${TAGS},${IMAGE}:v${MAJOR}"
+            TAGS="${TAGS},${IMAGE}:latest"
+          fi
+
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
+          echo "Will push tags:"
+          echo "${TAGS}" | tr ',' '\n'
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.created=${{ github.run_id }}
+            com.example.environment=${{ steps.version.outputs.environment }}
+            com.example.build-number=${{ steps.version.outputs.build_number }}
+
+      - name: Summary
+        run: |
+          echo "Image pushed: ${{ env.DOCKER_IMAGE }}"
+          echo "Version:      ${{ steps.version.outputs.version }}"
+          echo "Image tag:    ${{ steps.version.outputs.image_tag }}"
+          echo "Environment:  ${{ steps.version.outputs.environment }}"
+          echo "Tags:"
+          echo "${{ steps.tags.outputs.tags }}" | tr ',' '\n'
