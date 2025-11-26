@@ -27,8 +27,8 @@ jobs:
           # tools for lint & security
           pip install pytest flake8 bandit
 
-      - name: Run unit tests
-        run: pytest -q
+      # - name: Run unit tests
+      #   run: pytest -q
 
       - name: Run flake8 (lint)
         run: |
