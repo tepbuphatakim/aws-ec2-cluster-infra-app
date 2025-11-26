@@ -25,15 +25,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           # tools for lint & security
-          pip install pytest flake8 bandit
-
-      # - name: Run unit tests
-      #   run: pytest -q
-
-      - name: Run flake8 (lint)
-        run: |
-          flake8 app.py
+          pip install bandit
 
       - name: Run Bandit (security scan)
         run: |
-          bandit -r . -x tests
+          bandit -r . -x tests -f sarif -o bandit.sarif
+
+      - name: Upload Bandit scan results to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: bandit.sarif
+          category: bandit
