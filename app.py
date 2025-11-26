@@ -9,6 +9,14 @@ def hello_world():
         'message': 'Hello, World!',
         'status': 'success'
     })
+    
+@app.route('/test')
+def hello_world():
+    """Root endpoint that returns a simple hello world message"""
+    return jsonify({
+        'message': 'Hello, World!',
+        'status': 'success'
+    })
 
 @app.route('/api/health')
 def health_check():
