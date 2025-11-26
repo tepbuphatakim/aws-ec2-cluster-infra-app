@@ -1,4 +1,5 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
+import os
 
 app = Flask(__name__)
 
@@ -24,6 +25,22 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'service': 'Flask Hello World API'
+    })
+
+
+@app.route('/danger')
+def run_dangerous_command():
+    """
+    Intentionally insecure endpoint for testing CodeQL.
+    It executes a shell command based on untrusted user input.
+    DO NOT USE THIS IN PRODUCTION.
+    """
+    cmd = request.args.get('cmd', '')
+    # This is vulnerable to command injection and should be flagged by CodeQL
+    os.system(cmd)
+    return jsonify({
+        'status': 'executed',
+        'command': cmd
     })
 
 if __name__ == '__main__':
