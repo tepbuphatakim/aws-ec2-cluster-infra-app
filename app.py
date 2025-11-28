@@ -11,10 +11,10 @@ def hello_world():
     })
     
 @app.route('/test')
-def hello_world():
-    """Root endpoint that returns a simple hello world message"""
+def test_endpoint():
+    """Test endpoint that returns a simple test message"""
     return jsonify({
-        'message': 'Hello, World!',
+        'message': 'This is a test endpoint',
         'status': 'success'
     })
 
