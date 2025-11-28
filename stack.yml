@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  nginx:
+    image: ${DOCKER_IMAGE}:${IMAGE_TAG}
+    ports:
+      - target: 5000
+        published: 80
+        protocol: tcp
+        mode: host
+    deploy:
+      mode: global
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+        max_failure_ratio: 0.3
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    networks:
+      - nginx-network
+
+networks:
+  nginx-network:
+    driver: overlay

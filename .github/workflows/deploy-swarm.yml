@@ -1,0 +1,81 @@
+name: Deploy to Swarm (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Docker image tag to deploy (e.g. dev-v0.1.0-22609c1)'
+        required: true
+        type: string
+
+env:
+  DOCKER_IMAGE: ${{ vars.DOCKER_IMAGE }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add remote host to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy stack to Docker Swarm
+        env:
+          IMAGE_TAG: ${{ github.event.inputs.image_tag }}
+        run: |
+          set -e
+
+          echo "Deploying image: ${DOCKER_IMAGE}:${IMAGE_TAG}"
+
+          # Copy stack file to remote host
+          scp stack.yml "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/tmp/stack.yml"
+
+          # Execute deployment on the Swarm manager
+          ssh "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" "IMAGE_TAG=${IMAGE_TAG} DOCKER_IMAGE=${DOCKER_IMAGE} bash -s" << 'EOF'
+          set -e
+
+          echo "Rendering stack file with IMAGE_TAG=${IMAGE_TAG}"
+          # envsubst is part of gettext; ensure it's installed on the manager node
+          envsubst < /tmp/stack.yml > /tmp/stack_rendered.yml
+
+          echo "Deploying stack nginx-stack..."
+          docker stack deploy \
+            --with-registry-auth \
+            -c /tmp/stack_rendered.yml \
+            nginx-stack
+
+          echo "Current service tasks:"
+          docker service ps --no-trunc nginx-stack_nginx || true
+
+          echo "Waiting for tasks to stabilize..."
+          sleep 30
+
+          echo "Checking for failed or rejected tasks..."
+          FAILED_TASKS=$(docker service ps nginx-stack_nginx --format '{{.CurrentState}}' | grep -E 'Failed|Rejected' || true)
+
+          if [ -n "$FAILED_TASKS" ]; then
+            echo "Deployment failures detected:"
+            echo "$FAILED_TASKS"
+            echo "Rolling back service nginx-stack_nginx..."
+            docker service rollback nginx-stack_nginx || true
+            exit 1
+          fi
+
+          echo "Deployment appears healthy."
+          EOF
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          echo "Requested image: ${DOCKER_IMAGE}:${{ github.event.inputs.image_tag }}"
+
