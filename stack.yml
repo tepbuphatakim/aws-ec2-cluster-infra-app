@@ -8,7 +8,8 @@ services:
         published: 80
         protocol: tcp
     deploy:
-      mode: global
+      mode: replicated
+      replicas: 3
       update_config:
         parallelism: 1
         delay: 10s
