@@ -6,7 +6,7 @@ app = Flask(__name__)
 def hello_world():
     """Root endpoint that returns a simple hello world message"""
     return jsonify({
-        'message': 'Hello, World!',
+        'message': 'Hello, World! v0.0.2',
         'status': 'success'
     })
     
