@@ -7,7 +7,6 @@ services:
       - target: 5000
         published: 80
         protocol: tcp
-        mode: host
     deploy:
       mode: global
       update_config:
