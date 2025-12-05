@@ -36,7 +36,6 @@ jobs:
           set -e
 
           TAG="${GITHUB_REF_NAME}"          # dev-v0.1.0, uat-v0.1.0, v1.2.3
-          SHORT_SHA="$(git rev-parse --short HEAD)"
 
           # Determine environment from tag prefix
           if [[ "$TAG" == dev-* ]]; then
@@ -50,16 +49,13 @@ jobs:
           fi
 
           BASE_TAG="${TAG}"                 # use tag as-is
-          IMMUTABLE_TAG="${TAG}-${SHORT_SHA}"
 
           echo "base_tag=${BASE_TAG}" >> "$GITHUB_OUTPUT"
-          echo "immutable_tag=${IMMUTABLE_TAG}" >> "$GITHUB_OUTPUT"
           echo "environment=${ENVIRONMENT}" >> "$GITHUB_OUTPUT"
 
           echo "Computed:"
           echo "  TAG          = ${TAG}"
           echo "  BASE_TAG     = ${BASE_TAG}"
-          echo "  IMMUTABLE    = ${IMMUTABLE_TAG}"
           echo "  ENVIRONMENT  = ${ENVIRONMENT}"
 
       - name: Build tag list
@@ -73,10 +69,8 @@ jobs:
 
           # Always push:
           # - image:tag         (original tag)
-          # - image:tag-SHA     (immutable)
           # - image:env-latest  (pointer per environment)
           TAGS="${IMAGE}:${BASE_TAG}"
-          TAGS="${TAGS},${IMAGE}:${IMMUTABLE_TAG}"
           TAGS="${TAGS},${IMAGE}:${ENVIRONMENT}-latest"
 
           # For prod (v*.*.*) also push "latest"
@@ -105,7 +99,6 @@ jobs:
         run: |
           echo "Image pushed: ${{ env.DOCKER_IMAGE }}"
           echo "Base tag:     ${{ steps.version.outputs.base_tag }}"
-          echo "Immutable:     ${{ steps.version.outputs.immutable_tag }}"
           echo "Environment:   ${{ steps.version.outputs.environment }}"
           echo "Tags:"
           echo "${{ steps.tags.outputs.tags }}" | tr ',' '\n'

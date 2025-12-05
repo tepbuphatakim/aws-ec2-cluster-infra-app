@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: 'Docker image tag to deploy (e.g. dev-v0.1.0-22609c1)'
+        description: 'Docker image tag to deploy (e.g. dev-v0.1.0)'
         required: true
         type: string
 
